@@ -58,68 +58,56 @@ export function MessagesPage({ onNavigate }: MessagesPageProps) {
   }, [user]);
 
   useEffect(() => {
-    if (selectedConversation) {
-      loadMessages(true);
-      markMessagesAsRead();
+  if (!selectedConversation || !user) return;
 
-      const subscription = supabase
-        .channel(`conversation:${selectedConversation}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'messages',
-            filter: `conversation_id=eq.${selectedConversation}`
-          },
-          (payload) => {
-            const newMsg = payload.new as Message;
-            setMessages(prev => [...prev, newMsg]);
+  loadMessages(true);
+  markMessagesAsRead();
 
-            if (newMsg.sender_id !== user?.id) {
-              markMessagesAsRead();
-            }
-          }
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'messages',
-            filter: `conversation_id=eq.${selectedConversation}`
-          },
-          (payload) => {
-            const updatedMsg = payload.new as Message;
-            setMessages(prev => prev.map(msg =>
-              msg.id === updatedMsg.id ? updatedMsg : msg
-            ));
-          }
-        )
-        .subscribe();
+  // один канал для сообщений
+  const messagesChannel = supabase
+    .channel(`messages:${selectedConversation}`)
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${selectedConversation}` },
+      (payload) => {
+        const newMsg = payload.new as Message;
+        setMessages((prev) => [...prev, newMsg]);
+        if (newMsg.sender_id !== user.id) markMessagesAsRead();
+      }
+    )
+    .on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'messages', filter: `conversation_id=eq.${selectedConversation}` },
+      (payload) => {
+        const updatedMsg = payload.new as Message;
+        setMessages((prev) =>
+          prev.map((m) => (m.id === updatedMsg.id ? updatedMsg : m))
+        );
+      }
+    )
+    .subscribe((status) => {
+      console.log('🟢 Messages Realtime:', status);
+    });
 
-      const conversationsSubscription = supabase
-        .channel('conversations_updates')
-        .on(
-          'postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'conversations'
-          },
-          () => {
-            loadConversations();
-          }
-        )
-        .subscribe();
+  // второй канал — обновления списка диалогов
+  const convChannel = supabase
+    .channel('realtime:conversations')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'conversations' },
+      () => loadConversations()
+    )
+    .subscribe((status) => {
+      console.log('🟢 Conversations Realtime:', status);
+    });
 
-      return () => {
-        subscription.unsubscribe();
-        conversationsSubscription.unsubscribe();
-        setTyping(false);
-      };
-    }
-  }, [selectedConversation, user]);
+  return () => {
+    supabase.removeChannel(messagesChannel);
+    supabase.removeChannel(convChannel);
+    setTyping(false);
+  };
+}, [selectedConversation, user?.id]);
+
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

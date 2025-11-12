@@ -1,14 +1,23 @@
 import { createClient } from '@supabase/supabase-js';
 
+// === Настройка переменных окружения ===
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing Supabase environment variables');
+  throw new Error('❌ Missing Supabase environment variables');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// === Инициализация клиента Supabase с поддержкой Realtime ===
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  realtime: {
+    params: {
+      eventsPerSecond: 10, // можно увеличить до 50 при активном чате
+    },
+  },
+});
 
+// === Типы данных из базы ===
 export type Profile = {
   id: string;
   full_name: string;
@@ -76,3 +85,35 @@ export type Conversation = {
   last_message_at: string;
   created_at: string;
 };
+
+// === Подписка на Realtime события сообщений ===
+// (можно вызывать из любого компонента)
+export function subscribeToMessages(
+  conversationId: string,
+  callback: (message: Message) => void
+) {
+  const channel = supabase
+    .channel(`realtime:messages:${conversationId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages',
+        filter: `conversation_id=eq.${conversationId}`,
+      },
+      (payload) => {
+        console.log('📨 Новое сообщение:', payload.new);
+        callback(payload.new as Message);
+      }
+    )
+    .subscribe((status) => {
+      console.log('🟢 Realtime status:', status);
+    });
+
+  // Возвращаем функцию для отписки
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}
+

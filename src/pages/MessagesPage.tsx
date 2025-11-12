@@ -6,6 +6,13 @@ import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { useTypingIndicator } from '../hooks/useTypingIndicator';
 import { formatMessageTime, formatLastSeen, getDateSeparator, groupMessagesByDate, truncateText } from '../lib/messageUtils';
 
+// ✅ типы для realtime (исправляет TS7006)
+import type {
+  RealtimePostgresInsertPayload,
+  RealtimePostgresUpdatePayload,
+} from '@supabase/supabase-js';
+
+
 type ConversationWithUser = {
   id: string;
   user: {
@@ -58,56 +65,69 @@ export function MessagesPage({ onNavigate }: MessagesPageProps) {
   }, [user]);
 
   useEffect(() => {
-  if (!selectedConversation || !user) return;
+    if (!selectedConversation || !user) return;
 
-  loadMessages(true);
-  markMessagesAsRead();
+    loadMessages(true);
+    markMessagesAsRead();
 
-  // один канал для сообщений
-  const messagesChannel = supabase
-    .channel(`messages:${selectedConversation}`)
-    .on(
-      'postgres_changes',
-      { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${selectedConversation}` },
-      (payload) => {
-        const newMsg = payload.new as Message;
-        setMessages((prev) => [...prev, newMsg]);
-        if (newMsg.sender_id !== user.id) markMessagesAsRead();
-      }
-    )
-    .on(
-      'postgres_changes',
-      { event: 'UPDATE', schema: 'public', table: 'messages', filter: `conversation_id=eq.${selectedConversation}` },
-      (payload) => {
-        const updatedMsg = payload.new as Message;
-        setMessages((prev) =>
-          prev.map((m) => (m.id === updatedMsg.id ? updatedMsg : m))
-        );
-      }
-    )
-    .subscribe((status) => {
-      console.log('🟢 Messages Realtime:', status);
-    });
+    // один канал для сообщений
+    const messagesChannel = supabase
+      .channel(`messages:${selectedConversation}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${selectedConversation}`,
+        },
+        (payload: RealtimePostgresInsertPayload<Message>) => {
+          const newMsg = payload.new;
+          setMessages((prev) => [...prev, newMsg]);
+          if (newMsg.sender_id !== user.id) {
+            void markMessagesAsRead();
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${selectedConversation}`,
+        },
+        (payload: RealtimePostgresUpdatePayload<Message>) => {
+          const updatedMsg = payload.new;
+          setMessages((prev) => prev.map((m) => (m.id === updatedMsg.id ? updatedMsg : m)));
+        }
+      )
+.subscribe((status) => {
+  console.log('🟢 Messages Realtime:', status);
+});
 
-  // второй канал — обновления списка диалогов
-  const convChannel = supabase
-    .channel('realtime:conversations')
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'conversations' },
-      () => loadConversations()
-    )
-    .subscribe((status) => {
-      console.log('🟢 Conversations Realtime:', status);
-    });
 
-  return () => {
-    supabase.removeChannel(messagesChannel);
-    supabase.removeChannel(convChannel);
-    setTyping(false);
-  };
-}, [selectedConversation, user?.id]);
+    // второй канал — обновления списка диалогов
+    const convChannel = supabase
+      .channel('realtime:conversations')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'conversations' },
+        () => {
+          void loadConversations();
+        }
+      )
+.subscribe((status) => {
+  console.log('🟢 Messages Realtime:', status);
+});
 
+
+    return () => {
+      supabase.removeChannel(messagesChannel);
+      supabase.removeChannel(convChannel);
+      setTyping(false);
+    };
+  }, [selectedConversation, user?.id]); // важно: ждать user.id, чтобы канал был аутентифицирован
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -142,16 +162,15 @@ export function MessagesPage({ onNavigate }: MessagesPageProps) {
               .limit(1)
               .maybeSingle();
 
-            const unreadCount = conv.user1_id === user.id
-              ? conv.unread_count_user1 || 0
-              : conv.unread_count_user2 || 0;
+            const unreadCount =
+              conv.user1_id === user.id ? conv.unread_count_user1 || 0 : conv.unread_count_user2 || 0;
 
             return {
               id: conv.id,
               user: profile!,
               last_message_at: conv.last_message_at,
               lastMessage: lastMsg?.content,
-              unreadCount
+              unreadCount,
             };
           })
         );
@@ -198,7 +217,7 @@ export function MessagesPage({ onNavigate }: MessagesPageProps) {
         if (initial) {
           setMessages(sortedData);
         } else {
-          setMessages(prev => [...sortedData, ...prev]);
+          setMessages((prev) => [...sortedData, ...prev]);
         }
 
         setHasMore(data.length === PAGE_SIZE);
@@ -216,12 +235,12 @@ export function MessagesPage({ onNavigate }: MessagesPageProps) {
     try {
       await supabase.rpc('mark_messages_as_read', {
         p_conversation_id: selectedConversation,
-        p_user_id: user.id
+        p_user_id: user.id,
       });
 
-      setConversations(prev => prev.map(conv =>
-        conv.id === selectedConversation ? { ...conv, unreadCount: 0 } : conv
-      ));
+      setConversations((prev) =>
+        prev.map((conv) => (conv.id === selectedConversation ? { ...conv, unreadCount: 0 } : conv))
+      );
     } catch (error) {
       console.error('Error marking messages as read:', error);
     }
@@ -234,7 +253,7 @@ export function MessagesPage({ onNavigate }: MessagesPageProps) {
 
     if (scrollTop < 100 && messages.length > 0) {
       const firstMessageId = messages[0].id;
-      loadMessages(false, firstMessageId);
+      void loadMessages(false, firstMessageId);
     }
   }, [loadingMore, hasMore, messages]);
 
@@ -246,13 +265,11 @@ export function MessagesPage({ onNavigate }: MessagesPageProps) {
     setNewMessage('');
     setTyping(false);
 
-    const { error } = await supabase
-      .from('messages')
-      .insert({
-        conversation_id: selectedConversation,
-        sender_id: user.id,
-        content: messageContent
-      });
+    const { error } = await supabase.from('messages').insert({
+      conversation_id: selectedConversation,
+      sender_id: user.id,
+      content: messageContent,
+    });
 
     if (error) {
       console.error('Error sending message:', error);
@@ -270,12 +287,10 @@ export function MessagesPage({ onNavigate }: MessagesPageProps) {
     }
   };
 
-  const selectedConvData = conversations.find(c => c.id === selectedConversation);
+  const selectedConvData = conversations.find((c) => c.id === selectedConversation);
 
   const filteredConversations = searchQuery
-    ? conversations.filter(conv =>
-        conv.user.full_name.toLowerCase().includes(searchQuery.toLowerCase())
-      )
+    ? conversations.filter((conv) => conv.user.full_name.toLowerCase().includes(searchQuery.toLowerCase()))
     : conversations;
 
   const messageGroups = groupMessagesByDate(messages);
@@ -314,10 +329,7 @@ export function MessagesPage({ onNavigate }: MessagesPageProps) {
             <div className="p-8 text-center text-gray-500">
               <MessageCircle className="w-12 h-12 mx-auto mb-4 text-gray-300" />
               <p>Нет диалогов</p>
-              <button
-                onClick={() => onNavigate('search')}
-                className="mt-4 text-blue-600 hover:text-blue-700"
-              >
+              <button onClick={() => onNavigate('search')} className="mt-4 text-blue-600 hover:text-blue-700">
                 Найти собеседника
               </button>
             </div>
@@ -337,9 +349,7 @@ export function MessagesPage({ onNavigate }: MessagesPageProps) {
                 <div className="flex items-start justify-between mb-1">
                   <div className="flex items-center space-x-2 flex-1 min-w-0">
                     <span className="font-semibold text-gray-900 truncate">{conv.user.full_name}</span>
-                    {conv.user.is_online && (
-                      <span className="w-2 h-2 bg-green-500 rounded-full flex-shrink-0"></span>
-                    )}
+                    {conv.user.is_online && <span className="w-2 h-2 bg-green-500 rounded-full flex-shrink-0"></span>}
                   </div>
                   {conv.unreadCount > 0 && (
                     <span className="bg-blue-600 text-white text-xs font-semibold px-2 py-1 rounded-full flex-shrink-0">
@@ -348,14 +358,8 @@ export function MessagesPage({ onNavigate }: MessagesPageProps) {
                   )}
                 </div>
                 <div className="flex items-center justify-between">
-                  {conv.lastMessage && (
-                    <p className="text-sm text-gray-600 truncate flex-1">
-                      {truncateText(conv.lastMessage, 50)}
-                    </p>
-                  )}
-                  <span className="text-xs text-gray-400 ml-2 flex-shrink-0">
-                    {formatMessageTime(conv.last_message_at)}
-                  </span>
+                  {conv.lastMessage && <p className="text-sm text-gray-600 truncate flex-1">{truncateText(conv.lastMessage, 50)}</p>}
+                  <span className="text-xs text-gray-400 ml-2 flex-shrink-0">{formatMessageTime(conv.last_message_at)}</span>
                 </div>
               </div>
             ))
@@ -367,10 +371,7 @@ export function MessagesPage({ onNavigate }: MessagesPageProps) {
         {selectedConversation && selectedConvData ? (
           <>
             <div className="bg-white border-b border-gray-200 p-4 flex items-center">
-              <button
-                onClick={() => setSelectedConversation(null)}
-                className="md:hidden mr-3 text-gray-600 hover:text-gray-900"
-              >
+              <button onClick={() => setSelectedConversation(null)} className="md:hidden mr-3 text-gray-600 hover:text-gray-900">
                 <ArrowLeft className="w-6 h-6" />
               </button>
               <div>
@@ -378,18 +379,12 @@ export function MessagesPage({ onNavigate }: MessagesPageProps) {
                 {selectedConvData.user.is_online ? (
                   <p className="text-sm text-green-600">В сети</p>
                 ) : (
-                  <p className="text-sm text-gray-500">
-                    Был(а) {formatLastSeen(selectedConvData.user.last_seen)}
-                  </p>
+                  <p className="text-sm text-gray-500">Был(а) {formatLastSeen(selectedConvData.user.last_seen)}</p>
                 )}
               </div>
             </div>
 
-            <div
-              ref={messagesContainerRef}
-              onScroll={handleScroll}
-              className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50"
-            >
+            <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
               {loadingMore && (
                 <div className="text-center py-2">
                   <div className="inline-block animate-spin rounded-full h-6 w-6 border-2 border-blue-600 border-t-transparent"></div>
@@ -399,23 +394,16 @@ export function MessagesPage({ onNavigate }: MessagesPageProps) {
               {messageGroups.map((group, groupIndex) => (
                 <div key={groupIndex}>
                   <div className="flex justify-center my-4">
-                    <span className="px-3 py-1 bg-white rounded-full text-xs text-gray-500 shadow-sm">
-                      {getDateSeparator(group.date)}
-                    </span>
+                    <span className="px-3 py-1 bg-white rounded-full text-xs text-gray-500 shadow-sm">{getDateSeparator(group.date)}</span>
                   </div>
 
                   {group.messages.map((msg) => {
                     const isOwn = msg.sender_id === user?.id;
                     return (
-                      <div
-                        key={msg.id}
-                        className={`flex ${isOwn ? 'justify-end' : 'justify-start'} mb-2`}
-                      >
+                      <div key={msg.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'} mb-2`}>
                         <div
                           className={`max-w-xs md:max-w-md px-4 py-2 rounded-2xl ${
-                            isOwn
-                              ? 'bg-blue-600 text-white rounded-br-md'
-                              : 'bg-white text-gray-900 border border-gray-200 rounded-bl-md'
+                            isOwn ? 'bg-blue-600 text-white rounded-br-md' : 'bg-white text-gray-900 border border-gray-200 rounded-bl-md'
                           }`}
                         >
                           <p className="whitespace-pre-wrap break-words">{msg.content}</p>
@@ -423,12 +411,10 @@ export function MessagesPage({ onNavigate }: MessagesPageProps) {
                             <span>
                               {new Date(msg.created_at).toLocaleTimeString('ru', {
                                 hour: '2-digit',
-                                minute: '2-digit'
+                                minute: '2-digit',
                               })}
                             </span>
-                            {isOwn && msg.is_read && (
-                              <span className="text-xs">✓✓</span>
-                            )}
+                            {isOwn && msg.is_read && <span className="text-xs">✓✓</span>}
                           </div>
                         </div>
                       </div>

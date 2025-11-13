@@ -15,7 +15,7 @@ function AppContent() {
   useEffect(() => {
     const removeBoltBadge = () => {
       document
-        .querySelectorAll('[aria-label="Made in Bolt"], a[href*="bolt.new"]')
+        .querySelectorAll('[aria-label="Made in Faon"], a[href*="Faon"]')
         .forEach((el) => el.remove());
     };
 

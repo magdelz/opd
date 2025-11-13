@@ -32,7 +32,9 @@ export type Profile = {
   last_seen: string;
   created_at: string;
   updated_at: string;
+  interests?: string[]; // 👈 добавили
 };
+
 
 export type Interest = {
   id: string;

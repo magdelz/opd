@@ -2,10 +2,4 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Скрываем водяной знак Bolt во всех средах */
-@layer base {
-  [aria-label="Made in Bolt"],
-  a[href*="bolt.new"] {
-    @apply hidden;
-  }
-}
+

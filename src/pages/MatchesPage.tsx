@@ -2,6 +2,9 @@ import { useState, useEffect } from "react";
 import { MessageCircle, X, Check } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
+import { useLang } from "../contexts/LanguageContext";
+
+import { Avatar } from "../components/Avatar";
 
 type MatchWithUser = {
   id: string;
@@ -14,6 +17,7 @@ type MatchWithUser = {
     dormitory: string | null;
     bio: string | null;
     interests: string[];
+    avatar_url: string | null;
   };
 };
 
@@ -23,6 +27,7 @@ type MatchesPageProps = {
 
 export function MatchesPage({ onNavigate }: MatchesPageProps) {
   const { user } = useAuth();
+  const { t } = useLang();
   const [matches, setMatches] = useState<MatchWithUser[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -55,6 +60,8 @@ export function MatchesPage({ onNavigate }: MatchesPageProps) {
               .eq("id", otherUserId)
               .single();
 
+            if (!profile) return null;
+
             const { data: userInterests } = await supabase
               .from("user_interests")
               .select("interest_id, interests(name)")
@@ -64,7 +71,7 @@ export function MatchesPage({ onNavigate }: MatchesPageProps) {
               id: match.id,
               status: match.status,
               user: {
-                ...profile!,
+                ...profile,
                 interests:
                   userInterests?.map((ui: any) => ui.interests.name) || [],
               },
@@ -72,7 +79,7 @@ export function MatchesPage({ onNavigate }: MatchesPageProps) {
           })
         );
 
-        setMatches(matchesWithUsers);
+        setMatches(matchesWithUsers.filter(Boolean) as MatchWithUser[]);
       }
     } catch (error) {
       console.error("Error loading matches:", error);
@@ -86,7 +93,9 @@ export function MatchesPage({ onNavigate }: MatchesPageProps) {
       .from("matches")
       .update({ status: "accepted" })
       .eq("id", matchId);
-    if (!error) loadMatches();
+    if (!error) {
+      setMatches(prev => prev.map(m => m.id === matchId ? { ...m, status: 'accepted' } : m));
+    }
   };
 
   const handleReject = async (matchId: string) => {
@@ -94,7 +103,9 @@ export function MatchesPage({ onNavigate }: MatchesPageProps) {
       .from("matches")
       .delete()
       .eq("id", matchId);
-    if (!error) loadMatches();
+    if (!error) {
+      setMatches(prev => prev.filter(m => m.id !== matchId));
+    }
   };
 
   const handleMessage = async (userId: string) => {
@@ -122,31 +133,22 @@ export function MatchesPage({ onNavigate }: MatchesPageProps) {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 py-10 px-4">
-      <style>{`
-        @keyframes fadeUp {
-          from { opacity: 0; transform: translateY(20px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .fadeUp {
-          animation: fadeUp 0.5s ease-out forwards;
-        }
-      `}</style>
-
       <div className="max-w-7xl mx-auto">
-        <h1 className="text-4xl font-extrabold text-slate-900 mb-10 text-center">
-          Твои совпадения 💫
+        <h1 className="text-4xl font-extrabold text-slate-900 mb-10 text-center text-gradient">
+          {t('matches.title')}
         </h1>
 
         {loading ? (
-          <div className="text-center py-20 text-slate-500 text-lg">
-            Загрузка...
+          <div className="text-center py-20">
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent" />
+            <p className="mt-4 text-slate-500">{t('misc.loading')}</p>
           </div>
         ) : (
           <>
             {pendingMatches.length > 0 && (
               <Section
-                title="Запросы на знакомство"
-                color="emerald"
+                title={t('matches.pending')}
+                theme="emerald"
                 users={pendingMatches}
                 onAccept={handleAccept}
                 onReject={handleReject}
@@ -155,23 +157,23 @@ export function MatchesPage({ onNavigate }: MatchesPageProps) {
 
             {acceptedMatches.length > 0 && (
               <Section
-                title="Твои друзья"
-                color="blue"
+                title={t('matches.friends')}
+                theme="blue"
                 users={acceptedMatches}
                 onMessage={handleMessage}
               />
             )}
 
             {matches.length === 0 && (
-              <div className="text-center mt-16">
-                <p className="text-slate-600 text-lg mb-3">
-                  Пока совпадений нет 😔
+              <div className="text-center mt-16 bg-white p-12 rounded-3xl shadow-sm border border-slate-100">
+                <p className="text-slate-600 text-lg mb-4">
+                  {t('matches.empty')}
                 </p>
                 <button
                   onClick={() => onNavigate("search")}
-                  className="px-6 py-3 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 transition-all shadow-md hover:shadow-lg"
+                  className="px-6 py-3 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-xl font-semibold hover:from-blue-600 hover:to-indigo-600 transition-all shadow-md btn-glow"
                 >
-                  Начать поиск
+                  {t('matches.start_search')}
                 </button>
               </div>
             )}
@@ -180,126 +182,95 @@ export function MatchesPage({ onNavigate }: MatchesPageProps) {
       </div>
     </div>
   );
-}
 
-function Section({
-  title,
-  color,
-  users,
-  onAccept,
-  onReject,
-  onMessage,
-}: any) {
-  return (
-    <div className="mb-14 fadeUp">
-      <h2
-        className={`text-2xl font-semibold mb-6 text-${color}-700 text-center`}
-      >
-        {title}
-      </h2>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-        {users.map((m: any, i: number) => (
-          <Card
-            key={m.id}
-            data={m}
-            color={color}
-            onAccept={onAccept}
-            onReject={onReject}
-            onMessage={onMessage}
-            style={{ animationDelay: `${i * 100}ms` }}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function Card({ data, color, onAccept, onReject, onMessage }: any) {
-  const Initial = data.user.full_name?.charAt(0).toUpperCase() || "U";
-
-  return (
-    <div
-      className="fadeUp bg-white rounded-2xl shadow-md hover:shadow-2xl transition-all transform hover:-translate-y-2 overflow-hidden p-6 border border-slate-100"
-    >
-      {/* аватар */}
-      <div className="flex justify-center mb-5">
-        <div
-          className={`h-20 w-20 rounded-full bg-gradient-to-tr from-${color}-500 to-${color}-400 text-white flex items-center justify-center text-3xl font-bold shadow-md`}
-        >
-          {Initial}
-        </div>
-      </div>
-
-      {/* имя + инфо */}
-      <div className="text-center">
-        <h3 className="text-xl font-bold text-slate-900">
-          {data.user.full_name}
-          {data.user.age && (
-            <span className="text-slate-500 text-lg font-medium">
-              , {data.user.age}
-            </span>
-          )}
-        </h3>
-        {data.user.university && (
-          <p className="text-slate-600 mt-1 text-sm">
-            {data.user.university}
-          </p>
-        )}
-        {data.user.dormitory && (
-          <p className="text-slate-600 text-sm">{data.user.dormitory}</p>
-        )}
-      </div>
-
-      {/* био */}
-      {data.user.bio && (
-        <p className="text-center text-slate-700 mt-4 text-sm italic">
-          “{data.user.bio}”
-        </p>
-      )}
-
-      {/* интересы */}
-      {data.user.interests.length > 0 && (
-        <div className="flex flex-wrap justify-center gap-2 mt-5">
-          {data.user.interests.slice(0, 4).map((interest: string, i: number) => (
-            <span
-              key={i}
-              className="bg-slate-100 text-slate-700 text-xs px-3 py-1 rounded-full border border-slate-200"
-            >
-              {interest}
-            </span>
+  function Section({ title, theme, users, onAccept, onReject, onMessage }: any) {
+    const isEmerald = theme === 'emerald';
+    return (
+      <div className="mb-14 animate-slide-up">
+        <h2 className={`text-2xl font-semibold mb-6 text-center ${isEmerald ? 'text-emerald-700' : 'text-blue-700'}`}>
+          {title}
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+          {users.map((m: any, i: number) => (
+            <Card
+              key={m.id}
+              data={m}
+              theme={theme}
+              onAccept={onAccept}
+              onReject={onReject}
+              onMessage={onMessage}
+              delayMs={i * 100}
+            />
           ))}
         </div>
-      )}
-
-      {/* кнопки */}
-      <div className="mt-6 flex justify-center gap-3">
-        {onAccept && (
-          <button
-            onClick={() => onAccept(data.id)}
-            className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-medium transition-all"
-          >
-            <Check className="w-4 h-4" />
-            Принять
-          </button>
-        )}
-        {onReject && (
-          <button
-            onClick={() => onReject(data.id)}
-            className="p-2 rounded-xl border border-slate-200 hover:bg-slate-100 transition"
-          >
-            <X className="w-5 h-5 text-red-500" />
-          </button>
-        )}
-        {onMessage && (
-          <button
-            onClick={() => onMessage(data.user.id)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition-all"
-          >
-            <MessageCircle className="w-4 h-4" />
-            Написать
-          </button>
-        )}
       </div>
-    </div>
-  );
+    );
+  }
+
+  function Card({ data, theme, onAccept, onReject, onMessage, delayMs }: any) {
+    return (
+      <div
+        className="bg-white rounded-2xl shadow-md hover:shadow-2xl transition-all transform hover:-translate-y-2 overflow-hidden p-6 border border-slate-100 card-accent"
+        style={{ animationDelay: `${delayMs}ms` }}
+      >
+        <div className="flex justify-center mb-5">
+          <Avatar url={data.user.avatar_url} altText={data.user.full_name} className="!w-20 !h-20 text-3xl shadow-md ring-4 ring-white" />
+        </div>
+
+        <div className="text-center">
+          <h3 className="text-xl font-bold text-slate-900">
+            {data.user.full_name}
+            {data.user.age && <span className="text-slate-500 text-lg font-medium">, {data.user.age}</span>}
+          </h3>
+          {data.user.university && <p className="text-slate-600 mt-1 text-sm">{data.user.university}</p>}
+          {data.user.dormitory && <p className="text-slate-600 text-sm">{data.user.dormitory}</p>}
+        </div>
+
+        {data.user.bio && (
+          <p className="text-center text-slate-700 mt-4 text-sm italic line-clamp-2">
+            “{data.user.bio}”
+          </p>
+        )}
+
+        {data.user.interests.length > 0 && (
+          <div className="flex flex-wrap justify-center gap-2 mt-5">
+            {data.user.interests.slice(0, 4).map((interest: string, i: number) => (
+              <span key={i} className="bg-slate-50 text-slate-600 text-xs px-3 py-1 rounded-full border border-slate-200">
+                {interest}
+              </span>
+            ))}
+          </div>
+        )}
+
+        <div className="mt-6 flex justify-center gap-3">
+          {onAccept && (
+            <button
+              onClick={() => onAccept(data.id)}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white rounded-xl font-medium transition-all shadow-md"
+            >
+              <Check className="w-5 h-5 border-2 border-white rounded-full p-0.5" />
+              {t('matches.accept')}
+            </button>
+          )}
+          {onReject && (
+            <button
+              onClick={() => onReject(data.id)}
+              className="p-2.5 rounded-xl border-2 border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-200 hover:bg-red-50 transition-all focus:outline-none focus:ring-2 focus:ring-red-500"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
+          {onMessage && (
+            <button
+              onClick={() => onMessage(data.user.id)}
+              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white rounded-xl font-medium transition-all shadow-md"
+            >
+              <MessageCircle className="w-5 h-5" />
+              {t('matches.write')}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 }

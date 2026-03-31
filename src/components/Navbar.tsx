@@ -1,6 +1,9 @@
 import React from 'react';
-import { Search, Users, MessageCircle, Calendar, User, LogOut, Home } from 'lucide-react';
+import { Search, Users, MessageCircle, Calendar, User, LogOut, Home, FileText, Settings, Eye, EyeOff, UsersRound } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useLang } from '../contexts/LanguageContext';
+import { useA11y } from '../contexts/AccessibilityContext';
+import { Avatar } from './Avatar';
 
 type NavbarProps = {
   currentPage: string;
@@ -9,6 +12,8 @@ type NavbarProps = {
 
 export function Navbar({ currentPage, onNavigate }: NavbarProps) {
   const { user, profile, signOut } = useAuth();
+  const { t } = useLang();
+  const { highContrast, toggleHighContrast } = useA11y();
 
   const handleSignOut = async () => {
     try {
@@ -19,13 +24,10 @@ export function Navbar({ currentPage, onNavigate }: NavbarProps) {
     }
   };
 
-  // --- плавающий индикатор (pill) ---
   const wrapRef = React.useRef<HTMLDivElement>(null);
   const btnRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
   const [pill, setPill] = React.useState<{ left: number; width: number; height: number }>({
-    left: 0,
-    width: 0,
-    height: 36,
+    left: 0, width: 0, height: 36,
   });
 
   const recalcPill = React.useCallback(() => {
@@ -48,47 +50,44 @@ export function Navbar({ currentPage, onNavigate }: NavbarProps) {
     return () => window.removeEventListener('resize', onResize);
   }, [recalcPill]);
 
-  // элементы навигации для авторизованного пользователя
   const authedItems = [
-    { key: 'search',    label: 'Поиск',       icon: <Search className="w-5 h-5" />,    onClick: () => onNavigate('search') },
-    { key: 'matches',   label: 'Совпадения',  icon: <Users className="w-5 h-5" />,     onClick: () => onNavigate('matches') },
-    { key: 'messages',  label: 'Сообщения',   icon: <MessageCircle className="w-5 h-5" />, onClick: () => onNavigate('messages') },
-    { key: 'events',    label: 'События',     icon: <Calendar className="w-5 h-5" />,  onClick: () => onNavigate('events') },
-    { key: 'profile',   label: 'Профиль',     icon: <User className="w-5 h-5" />,      onClick: () => onNavigate('profile') },
+    { key: 'search', label: t('nav.search'), icon: <Search className="w-5 h-5" />, onClick: () => onNavigate('search') },
+    { key: 'matches', label: t('nav.matches'), icon: <Users className="w-5 h-5" />, onClick: () => onNavigate('matches') },
+    { key: 'messages', label: t('nav.messages'), icon: <MessageCircle className="w-5 h-5" />, onClick: () => onNavigate('messages') },
+    { key: 'posts', label: t('nav.posts'), icon: <FileText className="w-5 h-5" />, onClick: () => onNavigate('posts') },
+    { key: 'groups', label: t('nav.groups'), icon: <UsersRound className="w-5 h-5" />, onClick: () => onNavigate('groups') },
+    { key: 'events', label: t('nav.events'), icon: <Calendar className="w-5 h-5" />, onClick: () => onNavigate('events') },
+    { key: 'profile', label: t('nav.profile'), icon: <User className="w-5 h-5" />, onClick: () => onNavigate('profile') },
   ];
 
+
   return (
-    <nav className="bg-white shadow-sm border-b border-gray-100 sticky top-0 z-50">
+    <nav className="glass shadow-sm border-b border-slate-100/50 sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
-          {/* Логотип */}
+          {/* Logo */}
           <div
             className="flex items-center space-x-2 cursor-pointer hover:opacity-80 transition-opacity"
-            onClick={() => onNavigate('home')}
+            onClick={() => onNavigate(user ? 'search' : 'home')}
           >
             <Home className="w-6 h-6 text-blue-600" />
-            <span className="text-xl font-bold text-gray-900">Сосед по интересам</span>
+            <span className="text-xl font-bold text-gradient hidden sm:inline">{t('nav.brand')}</span>
           </div>
 
-          {/* Правый блок */}
+          {/* Right block */}
           {user && profile ? (
             <div className="relative">
-              {/* Контейнер кнопок с плавающим индикатором */}
-              <div
-                ref={wrapRef}
-                className="relative flex items-center gap-2"
-                style={{ minHeight: 36 }}
-              >
-                {/* Плавающий скруглённый прямоугольник (под активной кнопкой) */}
+              <div ref={wrapRef} className="relative flex items-center gap-1" style={{ minHeight: 36 }}>
+                {/* Floating pill indicator */}
                 <div
                   aria-hidden
-                  className="absolute top-1/2 -translate-y-1/2 rounded-xl bg-blue-100"
+                  className="absolute top-1/2 -translate-y-1/2 rounded-xl bg-blue-50"
                   style={{
                     left: pill.left,
                     width: pill.width,
                     height: pill.height,
                     transition: 'left 260ms cubic-bezier(.2,.8,.2,1), width 260ms cubic-bezier(.2,.8,.2,1)',
-                    boxShadow: '0 4px 18px rgba(37, 99, 235, 0.15)', // мягкое свечение
+                    boxShadow: '0 4px 18px rgba(37, 99, 235, 0.12)',
                     pointerEvents: 'none',
                   }}
                 />
@@ -101,40 +100,70 @@ export function Navbar({ currentPage, onNavigate }: NavbarProps) {
                       ref={(r) => (btnRefs.current[it.key] = r)}
                       onClick={it.onClick}
                       className={[
-                        'relative z-10 inline-flex items-center gap-2 px-3 py-2 rounded-lg',
+                        'relative z-10 inline-flex items-center gap-1.5 px-2.5 py-2 rounded-lg',
                         'text-sm font-medium transition-colors',
-                        isActive ? 'text-blue-700' : 'text-gray-600 hover:text-gray-900',
+                        isActive ? 'text-blue-700' : 'text-slate-600 hover:text-slate-900',
                       ].join(' ')}
+                      title={it.label}
                     >
                       <span className="shrink-0">{it.icon}</span>
-                      <span className="hidden sm:inline whitespace-nowrap">{it.label}</span>
+                      <span className="hidden lg:inline whitespace-nowrap text-xs">{it.label}</span>
                     </button>
                   );
                 })}
 
-                {/* Выйти */}
+                {/* Avatar */}
+                <div
+                  className="cursor-pointer hover:scale-105 transition-transform shrink-0 ml-1"
+                  onClick={() => onNavigate('profile')}
+                  title={profile.full_name}
+                >
+                  <Avatar url={profile.avatar_url} altText={profile.full_name} size="sm" />
+                </div>
+
+                {/* Accessibility toggle */}
+                <button
+                  onClick={toggleHighContrast}
+                  className="relative z-10 p-2 text-slate-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                  title={highContrast ? 'Обычный режим' : 'Режим для слабовидящих'}
+                >
+                  {highContrast ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+
+                {/* Settings */}
+                <button
+                  onClick={() => onNavigate('settings')}
+                  className={`relative z-10 p-2 rounded-lg transition-colors ${
+                    currentPage === 'settings' ? 'text-blue-700 bg-blue-50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
+                  }`}
+                  title={t('nav.settings')}
+                >
+                  <Settings className="w-4 h-4" />
+                </button>
+
+                {/* Logout */}
                 <button
                   onClick={handleSignOut}
-                  className="ml-3 relative z-10 inline-flex items-center gap-2 px-3 py-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                  className="ml-1 relative z-10 inline-flex items-center gap-1.5 px-2.5 py-2 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                  title={t('nav.logout')}
                 >
-                  <LogOut className="w-5 h-5" />
-                  <span className="hidden sm:inline">Выйти</span>
+                  <LogOut className="w-4 h-4" />
                 </button>
               </div>
             </div>
           ) : (
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-3">
               <button
                 onClick={() => onNavigate('login')}
-                className="px-4 py-2 text-gray-600 hover:text-gray-900 transition-colors"
+                className="px-4 py-2 text-slate-600 hover:text-slate-900 transition-colors font-medium"
               >
-                Войти
+                {t('nav.login')}
               </button>
               <button
                 onClick={() => onNavigate('register')}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-xl hover:from-blue-600 hover:to-indigo-600 transition-all shadow-md font-medium"
               >
-                Регистрация
+                {t('nav.register')}
               </button>
             </div>
           )}

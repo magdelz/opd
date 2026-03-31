@@ -1,9 +1,13 @@
-import React, { useState, useEffect, useId, useRef } from 'react';
-import { MessageCircle, Heart } from 'lucide-react';
+import { useState, useEffect, useId, useRef } from 'react';
+import { MessageCircle, Heart, Ban } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { useLang } from '../contexts/LanguageContext';
+import { getHiddenCategories, isBanned, banUser } from '../lib/banManager';
+import { Avatar } from '../components/Avatar';
+import { AutocompleteInput } from '../components/AutocompleteInput';
+import { UNIVERSITIES_LIST, DORMITORIES_LIST } from '../lib/constants';
 
-/* ===================== Типы ===================== */
 type UserProfile = {
   id: string;
   full_name: string;
@@ -12,104 +16,22 @@ type UserProfile = {
   dormitory: string | null;
   bio: string | null;
   gender: string | null;
+  avatar_url: string | null;
   interests: string[];
+  interestCategories: string[];
 };
 
-type SearchPageProps = {
-  onNavigate: (page: string) => void;
-};
+type SearchPageProps = { onNavigate: (page: string) => void; };
 
-/* ===================== TypeaheadInput =====================
-   Поле ввода с подсказками (typeahead). Выпадающее меню абсолютное,
-   поэтому не сдвигает сетку фильтров.
-=========================================================== */
-function TypeaheadInput({
-  label,
-  value,
-  onChange,
-  options,
-  placeholder
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: string[];
-  placeholder?: string;
+// Removed local TypeaheadInput, now using global AutocompleteInput
+
+function SearchUserCard({ profile, onMessage, onMatch, onBan, delayMs = 0, t }: {
+  profile: UserProfile; onMessage: (id: string) => void; onMatch: (id: string) => void;
+  onBan: (id: string) => void; delayMs?: number; t: (key: string) => string;
 }) {
-  const id = useId();
-  const [open, setOpen] = useState(false);
-  const [hover, setHover] = useState(-1);
-  const wrapRef = useRef<HTMLDivElement>(null);
-
-  const filtered = (value
-    ? options.filter(o => o.toLowerCase().startsWith(value.toLowerCase()))
-    : options
-  ).slice(0, 10);
-
-  useEffect(() => {
-    const onDoc = (e: MouseEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, []);
-
-  return (
-    <div className="flex flex-col gap-1 relative" ref={wrapRef}>
-      {label ? <label htmlFor={id} className="text-sm text-slate-600">{label}</label> : null}
-      <input
-        id={id}
-        value={value}
-        onChange={(e) => { onChange(e.target.value); setOpen(true); setHover(-1); }}
-        onFocus={() => setOpen(true)}
-        onKeyDown={(e) => {
-          if (!open) return;
-          if (e.key === 'ArrowDown') { e.preventDefault(); setHover(h => Math.min(h + 1, filtered.length - 1)); }
-          else if (e.key === 'ArrowUp') { e.preventDefault(); setHover(h => Math.max(h - 1, 0)); }
-          else if (e.key === 'Enter' && hover >= 0) { e.preventDefault(); onChange(filtered[hover]); setOpen(false); }
-          else if (e.key === 'Escape') { setOpen(false); }
-        }}
-        placeholder={placeholder}
-        className="h-11 w-full px-4 border border-slate-200 rounded-xl bg-white hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-200"
-        autoComplete="off"
-      />
-      {open && filtered.length > 0 && (
-        <div className="absolute left-0 right-0 top-[calc(100%+4px)] max-h-60 overflow-auto rounded-xl border border-slate-200 bg-white shadow z-50">
-          {filtered.map((opt, i) => (
-            <button
-              type="button"
-              key={opt}
-              onMouseEnter={() => setHover(i)}
-              onMouseLeave={() => setHover(-1)}
-              onClick={() => { onChange(opt); setOpen(false); }}
-              className={`w-full text-left px-4 py-2 ${i === hover ? 'bg-slate-100' : 'bg-white'}`}
-            >
-              {opt}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ===================== Карточка пользователя (новая) ===================== */
-function SearchUserCard({
-  profile,
-  onMessage,
-  onMatch,
-  delayMs = 0,
-}: {
-  profile: UserProfile;
-  onMessage: (id: string) => void;
-  onMatch: (id: string) => void;
-  delayMs?: number;
-}) {
-  const initial = profile.full_name?.charAt(0)?.toUpperCase() || 'U';
-
   return (
     <div
-      className="card-fade rounded-2xl bg-white shadow-md hover:shadow-2xl transition-all transform hover:-translate-y-2 overflow-hidden p-6 border border-slate-100"
+      className="card-fade rounded-2xl bg-white shadow-sm hover:shadow-xl transition-all transform hover:-translate-y-2 overflow-hidden p-6 border border-slate-100 card-accent"
       style={{ animationDelay: `${delayMs}ms` }}
     >
       <style>{`
@@ -117,14 +39,10 @@ function SearchUserCard({
         .card-fade { animation: cardFade .45s ease-out forwards; }
       `}</style>
 
-      {/* Аватар */}
       <div className="flex justify-center mb-5">
-        <div className="h-20 w-20 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-400 text-white flex items-center justify-center text-3xl font-bold shadow-md">
-          {initial}
-        </div>
+        <Avatar url={profile.avatar_url} altText={profile.full_name} className="!w-20 !h-20 text-3xl shadow-md" />
       </div>
 
-      {/* Имя и инфо */}
       <div className="text-center">
         <h3 className="text-xl font-bold text-slate-900">
           {profile.full_name}
@@ -134,135 +52,66 @@ function SearchUserCard({
         {profile.dormitory && <p className="text-slate-600 text-sm">{profile.dormitory}</p>}
       </div>
 
-      {/* Био */}
-      {profile.bio && (
-        <p className="text-center text-slate-700 mt-4 text-sm italic">“{profile.bio}”</p>
-      )}
+      {profile.bio && <p className="text-center text-slate-700 mt-4 text-sm italic">"{profile.bio}"</p>}
 
-      {/* Интересы */}
       {profile.interests?.length > 0 && (
         <div className="flex flex-wrap justify-center gap-2 mt-5">
           {profile.interests.slice(0, 4).map((tag, i) => (
-            <span
-              key={i}
-              className="bg-slate-100 text-slate-700 text-xs px-3 py-1 rounded-full border border-slate-200"
-            >
-              {tag}
-            </span>
+            <span key={i} className="bg-slate-100 text-slate-700 text-xs px-3 py-1 rounded-full border border-slate-200">{tag}</span>
           ))}
-          {profile.interests.length > 4 && (
-            <span className="text-xs text-slate-500">+{profile.interests.length - 4}</span>
-          )}
+          {profile.interests.length > 4 && <span className="text-xs text-slate-500">+{profile.interests.length - 4}</span>}
         </div>
       )}
 
-      {/* Кнопки */}
-      <div className="mt-6 flex justify-center gap-3">
-        <button
-          onClick={() => onMessage(profile.id)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition-all shadow-md"
-        >
-          <MessageCircle className="w-4 h-4" />
-          Написать
+      <div className="mt-6 flex justify-center gap-2">
+        <button onClick={() => onMessage(profile.id)}
+          className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white rounded-xl font-medium transition-all shadow-md text-sm">
+          <MessageCircle className="w-4 h-4" /> {t('search.write')}
         </button>
-        <button
-          onClick={() => onMatch(profile.id)}
-          className="p-2 rounded-xl border border-slate-200 hover:bg-slate-100 transition"
-          title="Добавить в совпадения"
-        >
+        <button onClick={() => onMatch(profile.id)} className="p-2 rounded-xl border border-slate-200 hover:bg-slate-100 transition" title="❤️">
           <Heart className="w-5 h-5 text-rose-500" />
+        </button>
+        <button onClick={() => onBan(profile.id)} className="p-2 rounded-xl border border-slate-200 hover:bg-red-50 transition" title={t('search.ban')}>
+          <Ban className="w-4 h-4 text-slate-400 hover:text-red-500" />
         </button>
       </div>
     </div>
   );
 }
 
-/* ===================== Справочники ===================== */
-const MASTER_UNIVERSITIES = [
-  'МГУ им. М.В. Ломоносова',
-  'СПбГУ',
-  'НИУ ВШЭ',
-  'МГТУ им. Н.Э. Баумана',
-  'ИТМО',
-  'РУДН',
-  'КФУ',
-  'УрФУ',
-  'ТГУ (Томский гос. университет)',
-  'НГУ (Новосибирский гос. университет)',
-  'НГТУ (Новосибирский гос. технический университет)',
-  'НГУЭУ (Новосибирский гос. университет экономики и управления)',
-  'ДВФУ',
-  'РАНХиГС',
-  'МИФИ (НИЯУ)',
-  'РТУ МИРЭА',
-  'ЮФУ',
-  'МГИМО',
-  'РГГУ',
-  'НГПУ (Новосибирский гос. пед. университет)',
-  'НСУЭМ (бывш. НГУЭУ)'
-];
-
-const ALL_DORMS = [
-  'Общежитие №1',
-  'Общежитие №2',
-  'Общежитие №3',
-  'Общежитие №4',
-  'Студгородок Северный',
-  'Студгородок Южный',
-  'Кампус на Ленинских горах',
-  'Кампус Васильевский остров'
-];
-
 const UNIVERSITY_DORMS: Record<string, string[]> = {
-  'НГУ (Новосибирский гос. университет)': ['Общежитие №1', 'Общежитие №2', 'Студгородок Северный'],
-  'НГТУ (Новосибирский гос. технический университет)': ['Общежитие №3', 'Общежитие №4', 'Студгородок Южный'],
-  'НГУЭУ (Новосибирский гос. университет экономики и управления)': ['Общежитие №2', 'Студгородок Южный'],
-  'МГУ им. М.В. Ломоносова': ['Кампус на Ленинских горах'],
-  'СПбГУ': ['Кампус Васильевский остров']
+  'НГУ (Новосибирск)': ['Общежитие №1', 'Общежитие №2', 'Студгородок Северный'],
+  'МГУ имени М.В. Ломоносова': ['ДСЛ МГУ', 'ДСВ МГУ', 'ДАС МГУ', 'ФДС МГУ'],
 };
 
-/* ===================== Страница поиска ===================== */
 export function SearchPage({ onNavigate }: SearchPageProps) {
   const { user } = useAuth();
+  const { t } = useLang();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({
-    university: '',
-    dormitory: '',
-    gender: '',
-    category: ''
-  });
+  const [filters, setFilters] = useState({ university: '', dormitory: '', gender: '', category: '' });
 
-  useEffect(() => {
-    loadUsers();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  useEffect(() => { loadUsers(); }, [user]);
 
   const loadUsers = async () => {
     if (!user) return;
-
     setLoading(true);
     try {
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('*')
-        .neq('id', user.id);
-
+      const { data: profiles } = await supabase.from('profiles').select('*').neq('id', user.id);
       if (profiles) {
         const usersWithInterests = await Promise.all(
           profiles.map(async (profile) => {
             const { data: userInterests } = await supabase
               .from('user_interests')
-              .select('interest_id, interests(name)')
+              .select('interest_id, interests(name, category)')
               .eq('user_id', profile.id);
-
             return {
               ...profile,
-              interests: userInterests?.map((ui: any) => ui.interests.name) || []
+              interests: userInterests?.map((ui: any) => ui.interests.name) || [],
+              interestCategories: userInterests?.map((ui: any) => ui.interests.category) || [],
             };
           })
         );
-
         setUsers(usersWithInterests as UserProfile[]);
       }
     } catch (error) {
@@ -274,143 +123,120 @@ export function SearchPage({ onNavigate }: SearchPageProps) {
 
   const handleMessage = async (userId: string) => {
     if (!user) return;
-
     const conversationUsers = [user.id, userId].sort();
-
-    const { data: existingConversation } = await supabase
-      .from('conversations')
-      .select('id')
+    const { data: existingConversation } = await supabase.from('conversations').select('id')
       .or(`and(user1_id.eq.${conversationUsers[0]},user2_id.eq.${conversationUsers[1]}),and(user1_id.eq.${conversationUsers[1]},user2_id.eq.${conversationUsers[0]})`)
       .maybeSingle();
-
     if (!existingConversation) {
-      await supabase
-        .from('conversations')
-        .insert({
-          user1_id: conversationUsers[0],
-          user2_id: conversationUsers[1]
-        });
+      await supabase.from('conversations').insert({ user1_id: conversationUsers[0], user2_id: conversationUsers[1] });
     }
-
     onNavigate('messages');
   };
 
   const handleMatch = async (userId: string) => {
     if (!user) return;
-
-    await supabase
-      .from('matches')
-      .insert({
-        user_id: user.id,
-        matched_user_id: userId,
-        status: 'pending'
-      });
-
+    await supabase.from('matches').insert({ user_id: user.id, matched_user_id: userId, status: 'pending' });
     loadUsers();
   };
 
-  /* ===== Фильтрация карточек ===== */
+  const handleBan = (userId: string) => {
+    if (confirm(t('misc.confirm_ban'))) {
+      banUser(userId);
+      setUsers(prev => prev.filter(u => u.id !== userId));
+    }
+  };
+
+  const hiddenCats = getHiddenCategories();
+
   const filteredUsers = users.filter(u => {
+    if (isBanned(u.id)) return false;
     if (filters.university && u.university !== filters.university) return false;
     if (filters.dormitory && u.dormitory !== filters.dormitory) return false;
     if (filters.gender && u.gender !== filters.gender) return false;
+    // Filter by hidden categories
+    if (hiddenCats.length > 0 && u.interestCategories.length > 0) {
+      const hasVisibleInterest = u.interestCategories.some(cat => !hiddenCats.includes(cat));
+      if (!hasVisibleInterest) return false;
+    }
     return true;
   });
 
-  /* ===== Источники для typeahead ===== */
   const universitiesFromDB = [...new Set(users.map(u => u.university).filter(Boolean))] as string[];
-  const universities: string[] = [...new Set([...MASTER_UNIVERSITIES, ...universitiesFromDB])];
-
+  const universities = [...new Set([...UNIVERSITIES_LIST, ...universitiesFromDB])];
   const dormitoriesFromDB = [...new Set(users.map(u => u.dormitory).filter(Boolean))] as string[];
-  const dormitoryOptions: string[] =
-    filters.university && UNIVERSITY_DORMS[filters.university]
-      ? UNIVERSITY_DORMS[filters.university]
-      : [...new Set([...ALL_DORMS, ...dormitoriesFromDB])];
+  const dormitoryOptions = filters.university && UNIVERSITY_DORMS[filters.university]
+    ? UNIVERSITY_DORMS[filters.university]
+    : [...new Set([...DORMITORIES_LIST, ...dormitoriesFromDB])];
 
-  // сбрасываем несоответствующее общежитие при смене ВУЗа
   useEffect(() => {
     if (filters.dormitory && !dormitoryOptions.includes(filters.dormitory)) {
       setFilters(f => ({ ...f, dormitory: '' }));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters.university]);
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4">
+    <div className="min-h-screen bg-slate-50 py-8 px-4">
       <div className="max-w-7xl mx-auto">
-        <h1 className="text-3xl font-bold text-gray-900 mb-8">Поиск соседей</h1>
+        <h1 className="text-3xl font-extrabold text-slate-900 mb-8">{t('search.title')}</h1>
 
-        {/* Фильтры */}
-        <div className="bg-white rounded-xl shadow-sm p-6 mb-8">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Фильтры</h2>
-
+        <div className="bg-white rounded-2xl shadow-sm p-6 mb-8 card-accent">
+          <h2 className="text-lg font-semibold text-slate-900 mb-4">{t('search.filters')}</h2>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-            <TypeaheadInput
-              label="ВУЗ"
-              value={filters.university}
-              onChange={(v) => setFilters({ ...filters, university: v })}
-              options={universities}
-              placeholder="Начните ввод (например: НГ)"
-            />
-
-            <TypeaheadInput
-              label="Общежитие"
-              value={filters.dormitory}
-              onChange={(v) => setFilters({ ...filters, dormitory: v })}
-              options={dormitoryOptions}
-              placeholder="Выберите или введите своё"
-            />
-
             <div className="flex flex-col gap-1">
-              <label className="text-sm text-slate-600">Пол</label>
-              <select
-                value={filters.gender}
+              <label className="text-sm text-slate-600">{t('setup.university')}</label>
+              <AutocompleteInput 
+                value={filters.university}
+                onChange={(v) => setFilters({ ...filters, university: v })}
+                suggestions={universities}
+                className="h-11 w-full px-4 border border-slate-200 rounded-xl bg-white focus:ring-2 focus:ring-blue-200 outline-none"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-sm text-slate-600">{t('setup.dormitory')}</label>
+              <AutocompleteInput 
+                value={filters.dormitory}
+                onChange={(v) => setFilters({ ...filters, dormitory: v })}
+                suggestions={dormitoryOptions}
+                className="h-11 w-full px-4 border border-slate-200 rounded-xl bg-white focus:ring-2 focus:ring-blue-200 outline-none"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-sm text-slate-600">{t('setup.gender')}</label>
+              <select value={filters.gender}
                 onChange={(e) => setFilters({ ...filters, gender: e.target.value })}
-                className="h-11 w-full px-4 border border-slate-200 rounded-xl bg-white hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-200"
-              >
-                <option value="">Любой пол</option>
-                <option value="male">Мужской</option>
-                <option value="female">Женский</option>
+                className="h-11 w-full px-4 border border-slate-200 rounded-xl bg-white hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-200">
+                <option value="">{t('search.any_gender')}</option>
+                <option value="male">{t('setup.gender_male')}</option>
+                <option value="female">{t('setup.gender_female')}</option>
               </select>
             </div>
-
-            <button
-              onClick={() => setFilters({ university: '', dormitory: '', gender: '', category: '' })}
-              className="h-11 px-4 whitespace-nowrap border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors"
-            >
-              Сбросить фильтры
+            <button onClick={() => setFilters({ university: '', dormitory: '', gender: '', category: '' })}
+              className="h-11 px-4 whitespace-nowrap border border-slate-300 rounded-xl hover:bg-slate-50 transition-colors font-medium">
+              {t('search.reset')}
             </button>
           </div>
         </div>
 
-        {/* Результаты */}
         {loading ? (
           <div className="text-center py-12">
             <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent" />
-            <p className="mt-4 text-gray-600">Загрузка...</p>
+            <p className="mt-4 text-slate-600">{t('search.loading')}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredUsers.map((profile, idx) => (
-              <SearchUserCard
-                key={profile.id}
-                profile={profile}
-                onMessage={handleMessage}
-                onMatch={handleMatch}
-                delayMs={idx * 70}
-              />
+              <SearchUserCard key={profile.id} profile={profile} onMessage={handleMessage}
+                onMatch={handleMatch} onBan={handleBan} delayMs={idx * 70} t={t} />
             ))}
           </div>
         )}
 
         {!loading && filteredUsers.length === 0 && (
-          <div className="text-center py-12 bg-white rounded-xl">
-            <p className="text-gray-600 text-lg">Пользователи не найдены</p>
-            <button
-              onClick={() => setFilters({ university: '', dormitory: '', gender: '', category: '' })}
-              className="mt-4 text-blue-600 hover:text-blue-700"
-            >
-              Сбросить фильтры
+          <div className="text-center py-12 bg-white rounded-2xl card-accent">
+            <p className="text-slate-600 text-lg">{t('search.no_users')}</p>
+            <button onClick={() => setFilters({ university: '', dormitory: '', gender: '', category: '' })}
+              className="mt-4 text-blue-600 hover:text-blue-700 font-medium">
+              {t('search.reset')}
             </button>
           </div>
         )}

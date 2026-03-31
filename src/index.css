@@ -2,4 +2,144 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ==================== Custom Animations ==================== */
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(59, 130, 246, 0.3); }
+  50% { box-shadow: 0 0 20px rgba(59, 130, 246, 0.5); }
+}
+@keyframes gradient-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
 
+.animate-slide-up { animation: slide-up 0.25s ease-out; }
+.animate-scale-in { animation: scale-in 0.2s ease-out; }
+.animate-glow { animation: glow-pulse 2s infinite; }
+.animate-gradient { 
+  background-size: 200% 200%; 
+  animation: gradient-shift 3s ease infinite; 
+}
+
+/* ==================== Accent Design System ==================== */
+:root {
+  --accent-primary: #3b82f6;
+  --accent-secondary: #6366f1;
+  --accent-glow: rgba(59, 130, 246, 0.15);
+  --glass-bg: rgba(255, 255, 255, 0.8);
+  --glass-border: rgba(255, 255, 255, 0.3);
+}
+
+/* Gradient text helper */
+.text-gradient {
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Glassmorphism */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+}
+
+/* Glowing focus rings */
+input:focus, select:focus, textarea:focus {
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+/* Button accent glow on hover */
+.btn-glow:hover {
+  box-shadow: 0 4px 20px var(--accent-glow);
+}
+
+/* Card hover accent */
+.card-accent {
+  transition: all 0.3s ease;
+  border: 1px solid #e2e8f0;
+}
+.card-accent:hover {
+  border-color: var(--accent-primary);
+  box-shadow: 0 4px 24px var(--accent-glow);
+  transform: translateY(-2px);
+}
+
+/* Scrollbar styling */
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ==================== Accessibility: High Contrast ==================== */
+html.high-contrast {
+  --accent-primary: #1d4ed8;
+  --accent-secondary: #4338ca;
+}
+html.high-contrast body {
+  color: #000 !important;
+  background-color: #fff !important;
+}
+html.high-contrast .bg-white,
+html.high-contrast .bg-slate-50,
+html.high-contrast .bg-gray-50,
+html.high-contrast .bg-slate-900 {
+  background-color: #fff !important;
+}
+html.high-contrast .text-gray-600,
+html.high-contrast .text-slate-600,
+html.high-contrast .text-gray-500,
+html.high-contrast .text-slate-500,
+html.high-contrast .text-gray-400,
+html.high-contrast .text-slate-400,
+html.high-contrast .text-white {
+  color: #1a1a1a !important;
+}
+html.high-contrast .text-gray-900,
+html.high-contrast .text-slate-900,
+html.high-contrast .text-slate-800,
+html.high-contrast .text-slate-700 {
+  color: #000 !important;
+}
+html.high-contrast .border-gray-200,
+html.high-contrast .border-slate-200,
+html.high-contrast .border-gray-100,
+html.high-contrast .border-slate-100 {
+  border-color: #333 !important;
+}
+html.high-contrast button,
+html.high-contrast a {
+  font-weight: 600;
+}
+html.high-contrast .bg-blue-600 { background-color: #1d4ed8 !important; }
+html.high-contrast .bg-gradient-to-r { background-image: none !important; background-color: #1d4ed8 !important; }
+
+/* ==================== Accessibility: Large Text ==================== */
+html.large-text {
+  font-size: 20px !important;
+}
+html.large-text .text-sm { font-size: 1rem !important; }
+html.large-text .text-xs { font-size: 0.875rem !important; }
+html.large-text .text-lg { font-size: 1.35rem !important; }
+html.large-text .text-xl { font-size: 1.5rem !important; }
+html.large-text .text-2xl { font-size: 1.75rem !important; }
+html.large-text .text-3xl { font-size: 2rem !important; }
+html.large-text .text-4xl { font-size: 2.5rem !important; }
+
+/* ==================== Accessibility: Reduced Motion ==================== */
+html.reduce-motion *,
+html.reduce-motion *::before,
+html.reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}

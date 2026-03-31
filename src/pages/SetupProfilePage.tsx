@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useLang } from '../contexts/LanguageContext';
 import { supabase, Interest } from '../lib/supabase';
+import { AutocompleteInput } from '../components/AutocompleteInput';
+import { UNIVERSITIES_LIST, DORMITORIES_LIST } from '../lib/constants';
 
 type SetupProfilePageProps = {
   onNavigate: (page: string) => void;
@@ -8,71 +11,59 @@ type SetupProfilePageProps = {
 
 export function SetupProfilePage({ onNavigate }: SetupProfilePageProps) {
   const { user, refreshProfile } = useAuth();
+  const { t } = useLang();
   const [loading, setLoading] = useState(false);
   const [interests, setInterests] = useState<Interest[]>([]);
   const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
   const [formData, setFormData] = useState({
-    full_name: '',
-    age: '',
-    university: '',
-    dormitory: '',
-    room_number: '',
-    bio: '',
-    gender: ''
+    full_name: '', age: '', university: '', dormitory: '', room_number: '', bio: '', gender: ''
   });
+  const [customInterest, setCustomInterest] = useState('');
 
-  useEffect(() => {
-    loadInterests();
-  }, []);
+  useEffect(() => { loadInterests(); }, []);
 
   const loadInterests = async () => {
-    const { data } = await supabase
-      .from('interests')
-      .select('*')
-      .order('category', { ascending: true });
+    const { data } = await supabase.from('interests').select('*').order('category', { ascending: true });
     if (data) setInterests(data);
   };
 
   const toggleInterest = (interestId: string) => {
-    setSelectedInterests(prev =>
-      prev.includes(interestId)
-        ? prev.filter(id => id !== interestId)
-        : [...prev, interestId]
-    );
+    setSelectedInterests(prev => prev.includes(interestId) ? prev.filter(id => id !== interestId) : [...prev, interestId]);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-
     setLoading(true);
     try {
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .upsert({
-          id: user.id,
-          full_name: formData.full_name,
-          age: formData.age ? parseInt(formData.age) : null,
-          university: formData.university,
-          dormitory: formData.dormitory,
-          room_number: formData.room_number,
-          bio: formData.bio,
-          gender: formData.gender,
-          updated_at: new Date().toISOString()
-        });
-
+      const { error: profileError } = await supabase.from('profiles').upsert({
+        id: user.id, full_name: formData.full_name, age: formData.age ? parseInt(formData.age) : null,
+        university: formData.university, dormitory: formData.dormitory, room_number: formData.room_number,
+        bio: formData.bio, gender: formData.gender, updated_at: new Date().toISOString()
+      });
       if (profileError) throw profileError;
 
-      if (selectedInterests.length > 0) {
-        const userInterests = selectedInterests.map(interestId => ({
-          user_id: user.id,
-          interest_id: interestId
-        }));
+      let finalInterests = [...selectedInterests];
+      
+      if (customInterest.trim()) {
+        const existing = interests.find(i => i.name.toLowerCase() === customInterest.trim().toLowerCase());
+        if (existing) {
+          if (!finalInterests.includes(existing.id)) finalInterests.push(existing.id);
+        } else {
+          const { data: newInterest, error: newIntErr } = await supabase.from('interests').insert({
+            name: customInterest.trim(),
+            category: 'other',
+            icon: '✨'
+          }).select().single();
+          if (newInterest) {
+            finalInterests.push(newInterest.id);
+          }
+        }
+      }
 
-        const { error: interestsError } = await supabase
-          .from('user_interests')
-          .upsert(userInterests);
-
+      if (finalInterests.length > 0) {
+        const userInterests = finalInterests.map(interestId => ({ user_id: user.id, interest_id: interestId }));
+        const { error: interestsError } = await supabase.from('user_interests').upsert(userInterests);
         if (interestsError) throw interestsError;
       }
 
@@ -85,158 +76,112 @@ export function SetupProfilePage({ onNavigate }: SetupProfilePageProps) {
     }
   };
 
-  const categories = {
-    sport: { name: 'Спорт', color: 'blue' },
-    games: { name: 'Игры', color: 'green' },
-    study: { name: 'Учёба', color: 'purple' },
-    hobby: { name: 'Хобби', color: 'orange' },
-    other: { name: 'Другое', color: 'pink' }
+  const categoryMap: Record<string, { nameKey: string; style: string }> = {
+    sport: { nameKey: 'cat.sport', style: 'bg-blue-100 border-blue-500 text-blue-700' },
+    games: { nameKey: 'cat.games', style: 'bg-green-100 border-green-500 text-green-700' },
+    study: { nameKey: 'cat.study', style: 'bg-purple-100 border-purple-500 text-purple-700' },
+    hobby: { nameKey: 'cat.hobby', style: 'bg-orange-100 border-orange-500 text-orange-700' },
+    other: { nameKey: 'cat.other', style: 'bg-pink-100 border-pink-500 text-pink-700' }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white py-12 px-4">
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white py-12 px-4">
       <div className="max-w-3xl mx-auto">
-        <div className="bg-white rounded-2xl shadow-xl p-8">
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">Создай свой профиль</h2>
-          <p className="text-gray-600 mb-8">Расскажи о себе, чтобы найти соседей по интересам</p>
+        <div className="bg-white rounded-3xl shadow-xl border border-slate-100 p-8 animate-slide-up">
+          <h2 className="text-3xl font-extrabold text-slate-900 mb-2">{t('setup.title')}</h2>
+          <p className="text-slate-600 mb-8">{t('setup.subtitle')}</p>
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Имя <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={formData.full_name}
+                <label className="block text-sm font-medium text-slate-700 mb-2">{t('setup.name')} <span className="text-red-500">*</span></label>
+                <input type="text" required value={formData.full_name}
                   onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Иван Иванов"
+                  className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-shadow" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">{t('setup.age')}</label>
+                <input type="number" value={formData.age} onChange={(e) => setFormData({ ...formData, age: e.target.value })}
+                  className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-shadow" min="16" max="100" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">{t('setup.university')}</label>
+                <AutocompleteInput 
+                  value={formData.university} 
+                  onChange={(val) => setFormData({ ...formData, university: val })}
+                  suggestions={UNIVERSITIES_LIST}
                 />
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Возраст
-                </label>
-                <input
-                  type="number"
-                  value={formData.age}
-                  onChange={(e) => setFormData({ ...formData, age: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="20"
-                  min="16"
-                  max="100"
+                <label className="block text-sm font-medium text-slate-700 mb-2">{t('setup.dormitory')}</label>
+                <AutocompleteInput 
+                  value={formData.dormitory} 
+                  onChange={(val) => setFormData({ ...formData, dormitory: val })}
+                  suggestions={DORMITORIES_LIST}
                 />
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  ВУЗ
-                </label>
-                <input
-                  type="text"
-                  value={formData.university}
-                  onChange={(e) => setFormData({ ...formData, university: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="МГУ"
-                />
+                <label className="block text-sm font-medium text-slate-700 mb-2">{t('setup.room')}</label>
+                <input type="text" value={formData.room_number} onChange={(e) => setFormData({ ...formData, room_number: e.target.value })}
+                  className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-shadow" />
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Общежитие
-                </label>
-                <input
-                  type="text"
-                  value={formData.dormitory}
-                  onChange={(e) => setFormData({ ...formData, dormitory: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Общага №3"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Комната
-                </label>
-                <input
-                  type="text"
-                  value={formData.room_number}
-                  onChange={(e) => setFormData({ ...formData, room_number: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="412"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Пол
-                </label>
-                <select
-                  value={formData.gender}
-                  onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="">Не указан</option>
-                  <option value="male">Мужской</option>
-                  <option value="female">Женский</option>
+                <label className="block text-sm font-medium text-slate-700 mb-2">{t('setup.gender')}</label>
+                <select value={formData.gender} onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+                  className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-shadow bg-white">
+                  <option value="">{t('setup.gender_none')}</option>
+                  <option value="male">{t('setup.gender_male')}</option>
+                  <option value="female">{t('setup.gender_female')}</option>
                 </select>
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                О себе
-              </label>
-              <textarea
-                value={formData.bio}
-                onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
-                rows={4}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Расскажи немного о себе, своих увлечениях и чем любишь заниматься..."
-              />
+              <label className="block text-sm font-medium text-slate-700 mb-2">{t('setup.bio')}</label>
+              <textarea value={formData.bio} onChange={(e) => setFormData({ ...formData, bio: e.target.value })} rows={4}
+                className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-shadow"
+                placeholder={t('setup.bio_placeholder')} />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-900 mb-4">
-                Выбери свои интересы
-              </label>
-              {Object.entries(categories).map(([key, { name, color }]) => {
+              <label className="block text-sm font-bold text-slate-900 mb-4">{t('setup.interests')}</label>
+              {Object.entries(categoryMap).map(([key, config]) => {
                 const categoryInterests = interests.filter(i => i.category === key);
                 if (categoryInterests.length === 0) return null;
-
                 return (
                   <div key={key} className="mb-6">
-                    <h3 className="text-sm font-semibold text-gray-700 mb-3">{name}</h3>
+                    <h3 className="text-sm font-semibold text-slate-700 mb-3">{t(config.nameKey)}</h3>
                     <div className="flex flex-wrap gap-2">
                       {categoryInterests.map(interest => (
-                        <button
-                          key={interest.id}
-                          type="button"
-                          onClick={() => toggleInterest(interest.id)}
-                          className={`px-4 py-2 rounded-lg border-2 transition-all ${
+                        <button key={interest.id} type="button" onClick={() => toggleInterest(interest.id)}
+                          className={`px-4 py-2 rounded-xl border-2 transition-all font-medium ${
                             selectedInterests.includes(interest.id)
-                              ? `bg-${color}-100 border-${color}-500 text-${color}-700`
-                              : 'bg-white border-gray-300 text-gray-700 hover:border-gray-400'
-                          }`}
-                        >
+                              ? config.style
+                              : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                          }`}>
                           {interest.name}
                         </button>
                       ))}
                     </div>
+                    {key === 'other' && (
+                      <div className="mt-4">
+                        <input 
+                          type="text" 
+                          value={customInterest} 
+                          onChange={(e) => setCustomInterest(e.target.value)} 
+                          placeholder="Впишите свой интерес (если нет в списке)"
+                          className="w-full sm:w-2/3 px-4 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-pink-400 outline-none transition-shadow text-sm"
+                        />
+                      </div>
+                    )}
                   </div>
                 );
               })}
             </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? 'Сохранение...' : 'Создать профиль'}
+            <button type="submit" disabled={loading}
+              className="w-full py-4 bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold rounded-xl hover:from-blue-600 hover:to-indigo-600 transition-all shadow-md btn-glow disabled:opacity-50 disabled:cursor-not-allowed text-lg">
+              {loading ? t('setup.saving') : t('setup.save')}
             </button>
           </form>
         </div>
